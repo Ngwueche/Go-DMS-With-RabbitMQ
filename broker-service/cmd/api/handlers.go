@@ -6,6 +6,8 @@ import (
 	"errors"
 	"log"
 	"net/http"
+
+	event "broker/lib/event"
 )
 
 type RequestPayload struct {
@@ -59,6 +61,8 @@ func (app *Application) handleSubmission(w http.ResponseWriter, r *http.Request)
 		app.authenticate(w, requestPayload.Auth)
 	case "log":
 		app.logRequest(w, requestPayload.Log)
+	case "log-mq":
+		app.LogWithRabbitMQ(w, requestPayload.Log)
 	case "mail":
 		app.sendMail(w, requestPayload.Mail)
 
@@ -167,6 +171,7 @@ func (app *Application) logRequest(w http.ResponseWriter, logPayload LogPayload)
 		return
 	}
 }
+
 func (app *Application) sendMail(w http.ResponseWriter, sendPayload MailPayload) {
 
 	jsonData, err := json.Marshal(sendPayload)
@@ -213,4 +218,39 @@ func (app *Application) sendMail(w http.ResponseWriter, sendPayload MailPayload)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+}
+
+func (app *Application) LogWithRabbitMQ(w http.ResponseWriter, logPayload LogPayload) {
+	err := app.PushToAMQP(logPayload.Name, logPayload.Data)
+	if err != nil {
+		app.errorJSON(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	var payload JsonResponse
+	payload.Error = false
+	payload.Message = "Log entry sent to RabbitMQ successfully"
+
+	err = app.writeJSON(w, http.StatusAccepted, payload)
+}
+
+func (app *Application) PushToAMQP(name, msg string) error {
+	emitter, err := event.NewEventEmitter(app.RabbitConn)
+
+	if err != nil {
+		return err
+	}
+
+	payload := LogPayload{
+		Name: name,
+		Data: msg,
+	}
+
+	j, _ := json.Marshal(payload)
+
+	err = emitter.Push(string(j), "log.INFO")
+	if err != nil {
+		return err
+	}
+	return nil
 }

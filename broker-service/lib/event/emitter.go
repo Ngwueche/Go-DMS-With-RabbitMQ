@@ -50,3 +50,14 @@ func NewEmitter(conn *amqp.Connection) (*Emitter, error) {
 	}
 	return emitter, nil
 }
+func NewEventEmitter(conn *amqp.Connection) (Emitter, error) {
+	emitter := Emitter{
+		conn: conn,
+	}
+	err := emitter.setup()
+	if err != nil {
+		return Emitter{}, err
+	}
+
+	return emitter, nil
+}
